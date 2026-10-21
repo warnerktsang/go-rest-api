@@ -2,26 +2,64 @@ package auth
 
 import (
 	"context"
-	"github.com/dgrijalva/jwt-go"
+	"fmt"
 	routing "github.com/go-ozzo/ozzo-routing/v2"
-	"github.com/go-ozzo/ozzo-routing/v2/auth"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/qiangxue/go-rest-api/internal/entity"
 	"github.com/qiangxue/go-rest-api/internal/errors"
 	"net/http"
+	"strings"
 )
 
+// realm is the authentication realm reported in the WWW-Authenticate header.
+const realm = "API"
+
 // Handler returns a JWT-based authentication middleware.
+// It parses the "Authorization: Bearer <token>" header, verifies the token signature (HS256 only)
+// and its registered claims (exp, nbf), and stores the user identity in the request context.
+// If the header is missing or the token is invalid, a "WWW-Authenticate" header is sent and
+// an http.StatusUnauthorized error is returned.
 func Handler(verificationKey string) routing.Handler {
-	return auth.JWT(verificationKey, auth.JWTOptions{TokenHandler: handleToken})
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	keyFunc := func(*jwt.Token) (interface{}, error) { return []byte(verificationKey), nil }
+
+	return func(c *routing.Context) error {
+		header := c.Request.Header.Get("Authorization")
+		message := ""
+		if strings.HasPrefix(header, "Bearer ") {
+			token, err := parser.Parse(header[7:], keyFunc)
+			if err == nil && token.Valid {
+				err = handleToken(c, token)
+			}
+			if err == nil {
+				return nil
+			}
+			message = err.Error()
+		}
+
+		c.Response.Header().Set("WWW-Authenticate", `Bearer realm="`+realm+`"`)
+		if message != "" {
+			return routing.NewHTTPError(http.StatusUnauthorized, message)
+		}
+		return routing.NewHTTPError(http.StatusUnauthorized)
+	}
 }
 
 // handleToken stores the user identity in the request context so that it can be accessed elsewhere.
 func handleToken(c *routing.Context, token *jwt.Token) error {
-	ctx := WithUser(
-		c.Request.Context(),
-		token.Claims.(jwt.MapClaims)["id"].(string),
-		token.Claims.(jwt.MapClaims)["name"].(string),
-	)
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return fmt.Errorf("unexpected claims type %T", token.Claims)
+	}
+	id, ok := claims["id"].(string)
+	if !ok {
+		return fmt.Errorf("token is missing the id claim")
+	}
+	name, ok := claims["name"].(string)
+	if !ok {
+		return fmt.Errorf("token is missing the name claim")
+	}
+	ctx := WithUser(c.Request.Context(), id, name)
 	c.Request = c.Request.WithContext(ctx)
 	return nil
 }

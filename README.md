@@ -31,7 +31,7 @@ since their usages are mostly localized and abstracted.
 * Database migration: [golang-migrate](https://github.com/golang-migrate/migrate)
 * Data validation: [ozzo-validation](https://github.com/go-ozzo/ozzo-validation)
 * Logging: [zap](https://github.com/uber-go/zap)
-* JWT: [jwt-go](https://github.com/dgrijalva/jwt-go)
+* JWT: [golang-jwt/jwt](https://github.com/golang-jwt/jwt)
 
 ## Getting Started
 
