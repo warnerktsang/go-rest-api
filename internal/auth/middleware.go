@@ -2,9 +2,9 @@ package auth
 
 import (
 	"context"
-	"github.com/golang-jwt/jwt"
 	routing "github.com/go-ozzo/ozzo-routing/v2"
 	"github.com/go-ozzo/ozzo-routing/v2/auth"
+	"github.com/golang-jwt/jwt"
 	"github.com/qiangxue/go-rest-api/internal/entity"
 	"github.com/qiangxue/go-rest-api/internal/errors"
 	"net/http"
@@ -17,11 +17,16 @@ func Handler(verificationKey string) routing.Handler {
 
 // handleToken stores the user identity in the request context so that it can be accessed elsewhere.
 func handleToken(c *routing.Context, token *jwt.Token) error {
-	ctx := WithUser(
-		c.Request.Context(),
-		token.Claims.(jwt.MapClaims)["id"].(string),
-		token.Claims.(jwt.MapClaims)["name"].(string),
-	)
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return errors.Unauthorized("")
+	}
+	id, idOK := claims["id"].(string)
+	name, nameOK := claims["name"].(string)
+	if !idOK || !nameOK {
+		return errors.Unauthorized("")
+	}
+	ctx := WithUser(c.Request.Context(), id, name)
 	c.Request = c.Request.WithContext(ctx)
 	return nil
 }
