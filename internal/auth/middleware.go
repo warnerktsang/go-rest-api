@@ -3,16 +3,42 @@ package auth
 import (
 	"context"
 	routing "github.com/go-ozzo/ozzo-routing/v2"
-	"github.com/go-ozzo/ozzo-routing/v2/auth"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/qiangxue/go-rest-api/internal/entity"
 	"github.com/qiangxue/go-rest-api/internal/errors"
 	"net/http"
+	"strings"
+)
+
+const (
+	bearerPrefix    = "Bearer "
+	wwwAuthenticate = `Bearer realm="API"`
 )
 
 // Handler returns a JWT-based authentication middleware.
+// It accepts only HS256 tokens signed with verificationKey that carry the
+// user identity in the "id" and "name" claims. Any other request is answered with 401.
 func Handler(verificationKey string) routing.Handler {
-	return auth.JWT(verificationKey, auth.JWTOptions{TokenHandler: handleToken})
+	key := []byte(verificationKey)
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	keyFunc := func(*jwt.Token) (interface{}, error) { return key, nil }
+
+	return func(c *routing.Context) error {
+		header := c.Request.Header.Get("Authorization")
+		c.Response.Header().Set("WWW-Authenticate", wwwAuthenticate)
+		if !strings.HasPrefix(header, bearerPrefix) {
+			return routing.NewHTTPError(http.StatusUnauthorized)
+		}
+		token, err := parser.ParseWithClaims(header[len(bearerPrefix):], jwt.MapClaims{}, keyFunc)
+		if err == nil && token.Valid {
+			err = handleToken(c, token)
+		}
+		if err != nil {
+			return routing.NewHTTPError(http.StatusUnauthorized, err.Error())
+		}
+		c.Response.Header().Del("WWW-Authenticate")
+		return nil
+	}
 }
 
 // handleToken stores the user identity in the request context so that it can be accessed elsewhere.
